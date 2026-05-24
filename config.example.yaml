@@ -1,0 +1,7 @@
+# Telegram Bot Token (从 @BotFather 获取)
+Token: "1234567890:AAFjWpmXzGqDdU4eKvRs8h6LbNcXyZtOo0k"
+
+# 代理配置，仅代理Bot流量（贴纸下载走直连）
+Proxy:
+  Enable: false            # 开关
+  URL: "socks5://127.0.0.1:7890"  # 支持 http:// 和 socks5://
