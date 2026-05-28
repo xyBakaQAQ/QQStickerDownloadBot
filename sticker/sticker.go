@@ -20,6 +20,7 @@ type EmojiData struct {
 }
 
 var unsafeNameChars = regexp.MustCompile(`[<>:"/\\|?*]`)
+var idFromURLPattern = regexp.MustCompile(`[?&]id=(\d+)`)
 
 // CleanName 清理文件名中的非法字符
 func CleanName(name string) string {
@@ -31,7 +32,7 @@ func ExtractID(input string) string {
 	if !strings.HasPrefix(input, "http") {
 		return input
 	}
-	if match := regexp.MustCompile(`[?&]id=(\d+)`).FindStringSubmatch(input); len(match) > 1 {
+	if match := idFromURLPattern.FindStringSubmatch(input); len(match) > 1 {
 		return match[1]
 	}
 	return ""
@@ -46,7 +47,14 @@ func FetchMeta(client *http.Client, id string) (*EmojiData, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("请求失败 (%d)", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
 	var data EmojiData
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("解析失败")
@@ -54,8 +62,8 @@ func FetchMeta(client *http.Client, id string) (*EmojiData, error) {
 	return &data, nil
 }
 
-// DownloadOne 下载单个表情，文件名格式: 序号_名称_ID.gif
-func DownloadOne(client *http.Client, imgID, imgName string, height, index int, dir string) (string, error) {
+// Download 下载单个表情，文件名格式: 序号_名称.gif
+func Download(client *http.Client, imgID, imgName string, height, index int, dir string) (string, error) {
 	url := fmt.Sprintf("https://gxh.vip.qq.com/club/item/parcel/item/%s/%s/raw%d.gif", imgID[:2], imgID, height)
 	filePath := filepath.Join(dir, fmt.Sprintf("%d_%s.gif", index, CleanName(imgName)))
 
@@ -64,6 +72,10 @@ func DownloadOne(client *http.Client, imgID, imgName string, height, index int, 
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("下载失败 (%d)", resp.StatusCode)
+	}
 
 	file, err := os.Create(filePath)
 	if err != nil {

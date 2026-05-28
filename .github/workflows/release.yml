@@ -4,6 +4,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -29,20 +33,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
           cache: true
-
-      - name: Get commit info
-        id: vars
-        run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "commit_msg=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
 
       - name: Build binary
         env:
@@ -59,7 +55,7 @@ jobs:
           go build \
             -trimpath \
             -ldflags="-s -w \
-              -X main.version=${{ steps.vars.outputs.sha_short }}" \
+              -X 'main.buildTime=$(date "+%Y-%m-%d %H:%M:%S")'" \
             -o "$OUTPUT" \
             .
 
@@ -110,17 +106,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Delete old latest release
-        run: |
-          gh release delete latest --yes --cleanup-tag || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create latest release
+      - name: Update latest release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Build (${{ steps.vars.outputs.sha_short }})
+          make_latest: true
           body: |
             ## Changelog
             ${{ steps.vars.outputs.commit_msg }}

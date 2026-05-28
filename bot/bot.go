@@ -4,12 +4,13 @@ import (
 	"archive/zip"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
+	"strconv"
 	"time"
 
 	"StickerDownloadBot/sticker"
@@ -131,21 +132,35 @@ func (b *Bot) processRemote(ctx context.Context, chatID int64, id string) {
 	}
 
 	h := data.SupportSize[0].Height
-	success := 0
-	failed := 0
+
+	type result struct{ err error }
+
+	results := make(chan result, total)
 
 	for i, img := range data.Imgs {
-		_, err := sticker.DownloadOne(b.qqClient, img.ID, img.Name, h, i+1, dir)
-		if err != nil {
+		go func(imgID, imgName string, idx int) {
+			_, err := sticker.Download(b.qqClient, imgID, imgName, h, idx+1, dir)
+			results <- result{err}
+		}(img.ID, img.Name, i)
+	}
+
+	success := 0
+	failed := 0
+	lastEdit := time.Now()
+
+	for completed := 0; completed < total; completed++ {
+		r := <-results
+		if r.err != nil {
 			failed++
 		} else {
 			success++
 		}
 
-		b.edit(ctx, chatID, status.ID,
-			fmt.Sprintf("%s\n表情数: %d\n[%d/%d] 下载中...", info, total, i+1, total))
-
-		time.Sleep(100 * time.Millisecond)
+		if time.Since(lastEdit) > 500*time.Millisecond || completed+1 == total {
+			b.edit(ctx, chatID, status.ID,
+				fmt.Sprintf("%s\n表情数: %d\n[%d/%d] 下载中...", info, total, completed+1, total))
+			lastEdit = time.Now()
+		}
 	}
 
 	if success == 0 {
@@ -202,8 +217,8 @@ func zipDir(srcDir, zipPath string) error {
 	// 按文件名前缀数字排序: 1_xxx.gif < 2_xxx.gif < 10_xxx.gif
 	sort.Slice(entries, func(i, j int) bool {
 		ni, _ := strconv.Atoi(strings.SplitN(entries[i].Name(), "_", 2)[0])
-		nj, _ := strconv.Atoi(strings.SplitN(entries[j].Name(), "_", 2)[0])
-		return ni < nj
+			nj, _ := strconv.Atoi(strings.SplitN(entries[j].Name(), "_", 2)[0])
+			return ni < nj
 	})
 
 	skipName := filepath.Base(zipPath)
@@ -211,15 +226,18 @@ func zipDir(srcDir, zipPath string) error {
 		if entry.IsDir() || entry.Name() == skipName {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(srcDir, entry.Name()))
+		srcPath := filepath.Join(srcDir, entry.Name())
+		src, err := os.Open(srcPath)
 		if err != nil {
 			continue
 		}
 		writer, err := w.Create(entry.Name())
 		if err != nil {
+			src.Close()
 			continue
 		}
-		writer.Write(data)
+		io.Copy(writer, src)
+		src.Close()
 	}
 	return nil
 }
