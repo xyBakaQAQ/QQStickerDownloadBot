@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"StickerDownloadBot/bot"
+	"StickerDownloadBot/config"
 )
 
 var (
@@ -31,16 +32,16 @@ func init() {
 
 func main() {
 	if _, err := os.Stat("config.yaml"); os.IsNotExist(err) {
-		setupConfig()
+		config.Setup()
 	}
 
-	cfg, err := loadConfig("config.yaml")
+	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		fmt.Println("读取config.yaml失败:", err)
 		return
 	}
 
-	tgClient, qqClient, err := createClients(cfg.Proxy)
+	tgClient, qqClient, err := config.CreateClients(cfg.Proxy)
 	if err != nil {
 		fmt.Println("代理配置错误:", err)
 		return
